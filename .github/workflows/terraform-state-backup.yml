@@ -1,0 +1,30 @@
+name: Terraform State Backup
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+
+  workflow_run:
+    workflows: ['Terraform Apply']
+    types:
+      - completed
+
+  workflow_dispatch:
+
+# The backup renews the encrypted state artifact; nothing is published as a
+# Release.
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  backup:
+    if: |
+      github.repository == 'aletheia-works/coi-serviceworker' &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.conclusion == 'success')
+    uses: aletheia-works/.github/.github/workflows/terraform-state-backup.yml@0ab4b956b12760b3926ac8f768e04432404a5182 # v1.3.4
+    with:
+      working_directory: infra/github
+    secrets:
+      TF_TOKEN_GITHUB: ${{ secrets.TF_TOKEN_GITHUB }}

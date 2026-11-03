@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          install: true
+          cache: true
+          install_args: bun actionlint opentofu
+      - run: bun install --frozen-lockfile
+      - run: mise run check
+      - run: tofu -chdir=infra/github init -backend=false -input=false -lockfile=readonly
+      - run: tofu -chdir=infra/github validate
+
+  test:
+    name: Test (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          install: true
+          cache: true
+          install_args: bun node
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/@playwright/test/cli.js install --with-deps ${{ matrix.browser }}
+      - run: node node_modules/@playwright/test/cli.js test --project=${{ matrix.browser }}
+
+  pack:
+    name: Pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          install: true
+          cache: true
+          install_args: node
+      - name: Require the tarball to hold the script, the readme, the license and package.json only
+        run: |
+          npm pack --dry-run --json > "$RUNNER_TEMP/pack.json"
+          jq -e '[.[0].files[].path] | sort == ["LICENSE", "README.md", "coi-serviceworker.js", "package.json"]' "$RUNNER_TEMP/pack.json"
+
+  ci-required:
+    name: ci-required
+    if: always()
+    needs: [check, test, pack]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            [ "$result" = success ] || { echo "a job ended $result"; exit 1; }
+          done

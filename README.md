@@ -1,0 +1,80 @@
+# coi-serviceworker
+
+Cross-origin isolation for static hosts that cannot set response headers,
+such as GitHub Pages. A service worker adds the headers
+(`Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Embedder-Policy: require-corp`) to every response it serves, so
+the page can use `SharedArrayBuffer` and other APIs that need
+`window.crossOriginIsolated`.
+
+## Usage
+
+Copy `coi-serviceworker.js` next to your page and load it before any script
+that needs isolation:
+
+```html
+<script src="coi-serviceworker.js"></script>
+```
+
+A service worker controls only its own folder and the folders below it, so
+put the file at or above every page that needs it. From npm:
+
+```sh
+npm install @aletheia-works/coi-serviceworker
+cp node_modules/@aletheia-works/coi-serviceworker/coi-serviceworker.js public/
+```
+
+The page must be served over HTTPS or from `localhost`. Every cross-origin
+resource it loads must allow being embedded (CORS or
+`Cross-Origin-Resource-Policy`), as `require-corp` demands.
+
+## What happens on a visit
+
+1. The page is already cross-origin isolated (the server sends the headers,
+   or the worker served it): nothing happens.
+2. Otherwise the script registers itself as a service worker and waits until
+   the worker is **active**, then reloads the page once. The reloaded page
+   comes through the worker and is isolated.
+3. If the reloaded page is still not isolated, the script logs a warning and
+   does not reload again.
+
+Later visits are served by the worker from the start and need no reload.
+
+## Differences from gzuidhof/coi-serviceworker
+
+This package is an independent implementation of the idea in
+[gzuidhof/coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker),
+whose last release, 0.1.7, is from 2023.
+
+- 0.1.7 reloads as soon as the worker is found installing, before it is
+  active. When the install takes a moment, the reloaded page is loaded
+  without the worker, is not isolated, and is never reloaded again. This
+  package reloads only after `navigator.serviceWorker.ready`. The test
+  `a worker that is slow to install still isolates the page` fails against
+  0.1.7 and passes here.
+- `Cross-Origin-Embedder-Policy` is always `require-corp`; there is no
+  `credentialless` mode.
+- There is no `window.coi` configuration and no deregistration message.
+
+## Development
+
+Tools come from `mise.toml` (`mise install`).
+
+```sh
+bun install
+mise run check
+mise run test
+```
+
+`mise run test` serves test pages with Bun and runs the Playwright tests in
+Chromium, Firefox and WebKit.
+
+## Releases
+
+Conventional Commits on `main` drive Release Please. Merging its release PR
+creates the `v<version>` tag, and `publish.yml` publishes the package to npm
+with OIDC trusted publishing and provenance.
+
+## License
+
+Apache-2.0

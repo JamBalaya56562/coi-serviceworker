@@ -1,0 +1,20 @@
+name: Terraform Plan
+
+on:
+  pull_request_target:
+    paths:
+      - 'infra/github/**'
+      - '.github/workflows/terraform-plan.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  plan:
+    if: github.repository == 'aletheia-works/coi-serviceworker' && github.event.pull_request.head.repo.full_name == github.repository
+    uses: aletheia-works/.github/.github/workflows/terraform-plan.yml@0ab4b956b12760b3926ac8f768e04432404a5182 # v1.3.4
+    with:
+      working_directory: infra/github
+    secrets: inherit

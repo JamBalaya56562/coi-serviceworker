@@ -1,0 +1,19 @@
+name: Check Conventional Commit
+
+on:
+  # edited: a retitled PR is checked again, as its title becomes the
+  # squash-merge commit's header.
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check:
+    uses: aletheia-works/.github/.github/workflows/commitlint.yml@0ab4b956b12760b3926ac8f768e04432404a5182 # v1.3.4

@@ -1,0 +1,30 @@
+name: Seed Terraform State
+
+on:
+  workflow_dispatch:
+    inputs:
+      state_b64:
+        description: 'Existing terraform.tfstate encoded as base64; never include credentials.'
+        required: true
+        type: string
+      state_sha256:
+        description: 'SHA256 of the decoded terraform.tfstate.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  seed:
+    if: github.repository == 'aletheia-works/coi-serviceworker' && github.ref == 'refs/heads/main'
+    uses: aletheia-works/.github/.github/workflows/seed-state.yml@0ab4b956b12760b3926ac8f768e04432404a5182 # v1.3.4
+    with:
+      state_b64: ${{ inputs.state_b64 }}
+      state_sha256: ${{ inputs.state_sha256 }}
+      state_artifact_name: terraform-state
+      state_run_id_variable: LATEST_APPLY_RUN_ID
+    secrets:
+      TF_TOKEN_GITHUB: ${{ secrets.TF_TOKEN_GITHUB }}
+      TF_STATE_PASSPHRASE: ${{ secrets.TF_STATE_PASSPHRASE }}

@@ -1,0 +1,17 @@
+[tools]
+actionlint = "latest"
+bun = "latest"
+node = "latest"
+opentofu = "latest"
+
+[tasks.check]
+description = "Lint and format-check the package, workflows and infrastructure"
+run = [
+  "bun run check",
+  "actionlint",
+  "tofu -chdir=infra/github fmt -check -recursive",
+]
+
+[tasks.test]
+description = "Run the browser tests in Chromium, Firefox and WebKit"
+run = "bun run test"

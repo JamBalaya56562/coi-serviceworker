@@ -1,0 +1,25 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/github/**'
+      - '.github/workflows/terraform-apply.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+jobs:
+  apply:
+    if: github.repository == 'aletheia-works/coi-serviceworker'
+    uses: aletheia-works/.github/.github/workflows/terraform-apply.yml@0ab4b956b12760b3926ac8f768e04432404a5182 # v1.3.4
+    with:
+      working_directory: infra/github
+      # No GitHub Environment gates this apply.
+      environment: ''
+    secrets: inherit

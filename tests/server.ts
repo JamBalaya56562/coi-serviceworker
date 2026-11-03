@@ -1,0 +1,66 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const SCRIPT = readFileSync(
+  join(import.meta.dir, '..', 'coi-serviceworker.js'),
+  'utf-8',
+);
+
+const VARIANTS: Record<string, string> = {
+  plain: '',
+  slow: `if (typeof window === 'undefined')
+  self.addEventListener('install', (event) =>
+    event.waitUntil(new Promise((resolve) => setTimeout(resolve, 1500))),
+  );
+`,
+  broken: `if (typeof window === 'undefined') {
+  const set = Headers.prototype.set;
+  Headers.prototype.set = function (name, value) {
+    if (name.toLowerCase() === 'cross-origin-opener-policy') return;
+    return set.call(this, name, value);
+  };
+}
+`,
+  headers: '',
+};
+
+const ISOLATED = {
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-embedder-policy': 'require-corp',
+};
+
+const PAGE = `<!doctype html>
+<meta charset="utf-8">
+<script>
+  sessionStorage.setItem('loads', String(Number(sessionStorage.getItem('loads') ?? 0) + 1));
+</script>
+<script src="coi-serviceworker.js"></script>
+<title>coi-serviceworker test</title>
+`;
+
+export function serve(port: number) {
+  return Bun.serve({
+    port,
+    fetch(request) {
+      const [, variant, file] = new URL(request.url).pathname.split('/');
+      const prefix = variant === undefined ? undefined : VARIANTS[variant];
+      if (prefix === undefined)
+        return new Response('not found', { status: 404 });
+      const extra = variant === 'headers' ? ISOLATED : {};
+      if (file === '' || file === 'index.html')
+        return new Response(PAGE, {
+          headers: { 'content-type': 'text/html; charset=utf-8', ...extra },
+        });
+      if (file === 'coi-serviceworker.js')
+        return new Response(prefix + SCRIPT, {
+          headers: { 'content-type': 'text/javascript', ...extra },
+        });
+      return new Response('not found', { status: 404 });
+    },
+  });
+}
+
+if (import.meta.main) {
+  const server = serve(Number(process.env.PORT ?? 4173));
+  console.log(`listening on ${server.url}`);
+}

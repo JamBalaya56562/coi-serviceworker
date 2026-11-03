@@ -1,0 +1,15 @@
+name: Auto Assign
+
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  assign:
+    uses: aletheia-works/.github/.github/workflows/assign.yml@0ab4b956b12760b3926ac8f768e04432404a5182 # v1.3.4

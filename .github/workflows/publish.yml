@@ -1,0 +1,81 @@
+name: Publish package
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publication-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Require a merged release PR with successful CI
+    if: github.repository == 'aletheia-works/coi-serviceworker'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: ${{ github.sha }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require a stable tag matching package.json, from a merged bot release PR whose CI passed
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$(jq -r .version package.json)" = "${RELEASE_TAG#v}"
+          gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/pulls" > "$RUNNER_TEMP/prs.json"
+          jq --arg sha "$SOURCE_SHA" --arg repo "$GITHUB_REPOSITORY" '[.[] | select(.merged_at != null and .merge_commit_sha == $sha and .base.ref == "main" and .head.repo.full_name == $repo and .head.ref == "release-please--branches--main" and .user.login == "aletheia-works-bot[bot]")] | if length == 1 then .[0] else error("exactly one merged bot release PR required") end' "$RUNNER_TEMP/prs.json" > "$RUNNER_TEMP/pr.json"
+          head=$(jq -r .head.sha "$RUNNER_TEMP/pr.json")
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&per_page=100" > "$RUNNER_TEMP/ci.json"
+          jq -e '.workflow_runs | sort_by(.run_number, .run_attempt) | last | .status == "completed" and .conclusion == "success"' "$RUNNER_TEMP/ci.json"
+
+  verify:
+    needs: authorize
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ github.ref_name }}
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '*'
+          check-latest: true
+          package-manager-cache: false
+      - name: Skip a version npm already has; stop on any other registry answer
+        id: registry
+        run: |
+          set -euo pipefail
+          status=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/@aletheia-works%2fcoi-serviceworker/${VERSION#v}")
+          case "$status" in
+            404) echo skip=false >> "$GITHUB_OUTPUT" ;;
+            200) echo skip=true >> "$GITHUB_OUTPUT" ;;
+            *) echo "registry answered $status" >&2; exit 1 ;;
+          esac
+      - name: Publish with npm OIDC trusted publishing
+        if: steps.registry.outputs.skip == 'false'
+        run: npx --yes npm@latest publish --provenance --access public --ignore-scripts
